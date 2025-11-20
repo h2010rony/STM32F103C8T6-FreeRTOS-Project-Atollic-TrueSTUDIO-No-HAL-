@@ -1,0 +1,2 @@
+task_manager.c:5:6:TaskManager_InitAllTasks	8	static
+task_manager.c:12:6:TaskManager_StartScheduler	8	static

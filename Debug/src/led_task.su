@@ -1,0 +1,2 @@
+led_task.c:9:6:led_task_init	16	static
+led_task.c:23:6:vLEDTask	24	static

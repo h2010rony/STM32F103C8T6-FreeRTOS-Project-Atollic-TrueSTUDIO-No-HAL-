@@ -1,0 +1,4 @@
+adc_task.c:10:6:adc_init	4	static
+adc_task.c:40:10:adc_read	16	static
+adc_task.c:55:6:adc_task_init	16	static
+adc_task.c:69:6:vADCTask	32	static

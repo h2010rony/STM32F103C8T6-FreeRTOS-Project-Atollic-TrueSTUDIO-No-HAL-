@@ -1,0 +1,7 @@
+core_cm3.h:930:22:NVIC_EnableIRQ	16	static
+core_cm3.h:1014:22:NVIC_SetPriority	16	static
+softpwm.c:14:6:gpio_pc13_init	16	static
+softpwm.c:32:6:tim2_init_for_pwm_timebase	24	static
+softpwm.c:72:6:pwm_set_duty_percent	16	static
+softpwm.c:79:6:pwm_set_duty_percent_from_0_to_100	16	static
+softpwm.c:86:6:TIM2_IRQHandler	4	static

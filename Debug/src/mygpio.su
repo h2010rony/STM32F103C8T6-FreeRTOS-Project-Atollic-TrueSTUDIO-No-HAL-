@@ -1,0 +1,10 @@
+core_cm3.h:930:22:NVIC_EnableIRQ	16	static
+mygpio.c:9:6:config_gpio_input	24	static
+mygpio.c:55:6:config_gpio_output	24	static
+mygpio.c:107:6:config_gpio_interrupt	24	static
+mygpio.c:214:6:enable_gpio_interrupt	16	static
+mygpio.c:222:6:gpio_write	24	static
+mygpio.c:235:9:gpio_read	16	static
+mygpio.c:241:6:gpio_set	16	static
+mygpio.c:247:6:gpio_clear	16	static
+mygpio.c:253:6:gpio_toggle	16	static
