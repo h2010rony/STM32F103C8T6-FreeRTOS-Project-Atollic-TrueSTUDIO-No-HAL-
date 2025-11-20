@@ -1,0 +1,251 @@
+#include <stdint.h>
+#include <stddef.h>
+#include "FreeRTOS.h"
+#include "task.h"
+#include "queue.h"
+#include "mygpio.h"
+#include "myclock.h"
+#include "stm32f10x.h"  // Standard library header
+
+
+TaskHandle_t xLEDTaskHandle = NULL;
+TaskHandle_t xButtonTaskHandle = NULL;
+
+/* Queue for communication between tasks */
+QueueHandle_t xLEDQueue;
+
+/* Button states */
+typedef enum {
+    BUTTON_RELEASED = 0,
+    BUTTON_PRESSED = 1
+} ButtonState_t;
+
+/* LED commands */
+typedef enum {
+    LED_OFF = 0,
+    LED_ON = 1,
+    LED_TOGGLE = 2,
+    LED_BLINK_SLOW = 3,
+    LED_BLINK_FAST = 4
+} LEDCommand_t;
+
+/* Function prototypes */
+void vLEDTask(void *pvParameters);
+void vButtonTask(void *pvParameters);
+void gpio_init(void);
+
+
+
+int main(void)
+{
+    //SystemInit();  // From standard library
+    setto72MHz();  // Our implementation
+    gpio_init();
+
+    xLEDQueue = xQueueCreate(5, sizeof(LEDCommand_t));
+
+	/* Create LED Task */
+	xTaskCreate(vLEDTask,
+				"LED Task",
+				80,
+				NULL,
+				1,
+				&xLEDTaskHandle);
+
+	/* Create Button Task */
+	xTaskCreate(vButtonTask,
+				"Button Task",
+				80,
+				NULL,
+				2,  // Higher priority than LED task
+				&xButtonTaskHandle);
+
+	/* Start FreeRTOS scheduler */
+    vTaskStartScheduler();
+
+        /* Should never reach here */
+
+
+    while(1){};
+
+
+}
+
+void vLEDTask(void *pvParameters)
+{
+    LEDCommand_t xReceivedCommand;
+    TickType_t xLastWakeTime;
+    //uint32_t blink_state = 0;
+    uint8_t current_mode = LED_BLINK_SLOW; // Default mode
+
+    xLastWakeTime = xTaskGetTickCount();
+
+    for(;;)
+    {
+        /* Check for new commands from button task */
+        if(xQueueReceive(xLEDQueue, &xReceivedCommand, 0) == pdTRUE)
+        {
+            current_mode = xReceivedCommand;
+
+            /* Execute immediate commands */
+            switch(xReceivedCommand)
+            {
+                case LED_OFF:
+                	gpio_clear(GPIOC, 13);
+                    break;
+                case LED_ON:
+                    gpio_set(GPIOC, 13);
+                    break;
+                case LED_TOGGLE:
+                    gpio_toggle(GPIOC, 13);
+                    break;
+                default:
+                    /* For blink modes, just update the mode */
+                    break;
+            }
+        }
+
+        /* Handle continuous modes */
+        switch(current_mode)
+        {
+            case LED_BLINK_SLOW:
+                /* Blink every 1000ms */
+                if((xTaskGetTickCount() - xLastWakeTime) >= 1000 / portTICK_PERIOD_MS)
+                {
+                	gpio_toggle(GPIOC, 13);
+                    xLastWakeTime = xTaskGetTickCount();
+                }
+                break;
+
+            case LED_BLINK_FAST:
+                /* Blink every 250ms */
+                if((xTaskGetTickCount() - xLastWakeTime) >= 250 / portTICK_PERIOD_MS)
+                {
+                	gpio_toggle(GPIOC, 13);
+                    xLastWakeTime = xTaskGetTickCount();
+                }
+                break;
+
+            case LED_OFF:
+            case LED_ON:
+                /* LED state is fixed, no blinking needed */
+                break;
+
+            default:
+                break;
+        }
+
+        /* Small delay to prevent task from hogging CPU */
+        vTaskDelay(10 / portTICK_PERIOD_MS);
+    }
+}
+
+/**
+ * @brief Button Task
+ * Reads button state and sends commands to LED task
+ */
+void vButtonTask(void *pvParameters)
+{
+    ButtonState_t last_button_state = BUTTON_RELEASED;
+    ButtonState_t current_button_state;
+    uint32_t button_press_count = 0;
+    uint32_t last_press_time = 0;
+    LEDCommand_t command_to_send;
+
+    for(;;)
+    {
+        /* Read current button state */
+        current_button_state = pin_read(GPIOC, 0);
+
+        /* Detect button press (rising edge) */
+        if((current_button_state == BUTTON_PRESSED) && (last_button_state == BUTTON_RELEASED))
+        {
+            uint32_t current_time = xTaskGetTickCount();
+
+            /* Simple debounce - ignore presses too close together */
+            if((current_time - last_press_time) > 200 / portTICK_PERIOD_MS)
+            {
+                button_press_count++;
+                last_press_time = current_time;
+
+                /* Cycle through LED modes on each button press */
+                switch(button_press_count % 5)
+                {
+                    case 0:
+                        command_to_send = LED_OFF;
+                        break;
+                    case 1:
+                        command_to_send = LED_ON;
+                        break;
+                    case 2:
+                        command_to_send = LED_BLINK_SLOW;
+                        break;
+                    case 3:
+                        command_to_send = LED_BLINK_FAST;
+                        break;
+                    case 4:
+                        command_to_send = LED_TOGGLE;
+                        break;
+                }
+
+                /* Send command to LED task */
+                xQueueSend(xLEDQueue, &command_to_send, 0);
+            }
+        }
+
+        /* Update last button state */
+        last_button_state = current_button_state;
+
+        /* Delay for debouncing and to prevent CPU hogging */
+        vTaskDelay(50 / portTICK_PERIOD_MS);
+    }
+}
+
+/**
+ * @brief Hardware setup
+ * Initializes all peripherals
+ */
+void gpio_init(void)
+{
+	enable_portc_clock;
+	config_gpio_output(GPIOC, 13, out_2MHz, GeneralPurpose);
+	enable_porta_clock;
+	config_gpio_input(GPIOA, 0, Floating);
+}
+
+/* FreeRTOS hook functions - only needed if enabled in FreeRTOSConfig.h */
+#if (configUSE_MALLOC_FAILED_HOOK != 0)
+void vApplicationMallocFailedHook( void )
+{
+    while(1)
+    {
+        /* Rapid LED blink to indicate malloc failure */
+    	toggle_pin(GPIOC, 13);
+        vTaskDelay(100 / portTICK_PERIOD_MS);
+    }
+}
+#endif
+
+#if (configCHECK_FOR_STACK_OVERFLOW != 0)
+void vApplicationStackOverflowHook( TaskHandle_t xTask, char *pcTaskName )
+{
+    (void)xTask;
+    (void)pcTaskName;
+    while(1)
+    {
+        /* Slow LED blink to indicate stack overflow */
+    	toggle_pin(GPIOC, 13);
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
+    }
+}
+#endif
+
+#if (configUSE_IDLE_HOOK != 0)
+void vApplicationIdleHook( void )
+{
+    /* Optional: Put CPU in low power mode */
+    /* __WFI(); */  /* Wait For Interrupt */
+}
+#endif
+
+
